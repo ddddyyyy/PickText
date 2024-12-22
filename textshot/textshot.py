@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """ Take a screenshot and copy its text content to the clipboard. """
-import argparse
-import sys
 
-import pyperclip
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QPalette, QBrush
+from PyQt5.QtWidgets import QMainWindow
 
-from logger import log_copied, log_ocr_failure
-from notifications import notify_copied, notify_ocr_failure
-from ocr import ensure_tesseract_installed, get_ocr_result
-
+from display.display_main import Ui_MainWindow
+from .logger import log_ocr_failure
+from .ocr import get_ocr_result
 
 
 class Snipper(QtWidgets.QWidget):
@@ -29,8 +27,7 @@ class Snipper(QtWidgets.QWidget):
         palette.setBrush(self.backgroundRole(), QtGui.QBrush(self.getWindow()))
         self.setPalette(palette)
 
-        QtWidgets.QApplication.setOverrideCursor(
-            QtGui.QCursor(QtCore.Qt.CrossCursor))
+        QtWidgets.QApplication.setOverrideCursor(QtGui.QCursor(QtCore.Qt.CrossCursor))
 
         self.start, self.end = QtCore.QPoint(), QtCore.QPoint()
         self.langs = langs
@@ -66,11 +63,9 @@ class Snipper(QtWidgets.QWidget):
     def mouseMoveEvent(self, event):
         self.end = event.pos()
         self.update()
-        return super().mousePressEvent(event)
+        return super().mouseMoveEvent(event)
 
     def snipOcr(self):
-        self.hide()
-
         ocr_result = self.ocrOfDrawnRectangle()
         if ocr_result:
             return ocr_result
@@ -79,6 +74,8 @@ class Snipper(QtWidgets.QWidget):
 
     def hide(self):
         super().hide()
+        # 重置鼠标样式
+        QtWidgets.QApplication.restoreOverrideCursor()
         QtWidgets.QApplication.processEvents()
 
     def ocrOfDrawnRectangle(self):
@@ -99,16 +96,8 @@ class OneTimeSnipper(Snipper):
     def mouseReleaseEvent(self, event):
         if self.start == self.end:
             return super().mouseReleaseEvent(event)
-
-        ocr_result = self.snipOcr()
-        if ocr_result:
-            pyperclip.copy(ocr_result)
-            log_copied(ocr_result)
-            notify_copied(ocr_result)
-        else:
-            notify_ocr_failure()
-
-        QtWidgets.QApplication.quit()
+        # 隐藏截图组件
+        self.hide()
 
 
 class IntervalSnipper(Snipper):
@@ -122,74 +111,72 @@ class IntervalSnipper(Snipper):
     def __init__(self, parent, interval, langs=None, flags=Qt.WindowFlags()):
         super().__init__(parent, langs, flags)
         self.interval = interval
+        self.myWin: PickTextMainWindow = parent
+
+        # 配置定时组件
+        self.timer = QTimer()
+        self.is_paused = True
+        self.prevShot = None
+        self.timer.timeout.connect(self.onShotOcrInterval)
 
     def mouseReleaseEvent(self, event):
         if self.start == self.end:
             return super().mouseReleaseEvent(event)
-
         # Take a shot as soon as the rectangle has been drawn
         self.onShotOcrInterval()
-        # And then every `self.interval`ms
-        self.startShotOcrInterval()
-
-    def startShotOcrInterval(self):
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.onShotOcrInterval)
-        self.timer.start(self.interval)
+        # self.togglePause()
+        # 隐藏截图组件
+        self.hide()
 
     def onShotOcrInterval(self):
-        prev_ocr_result = self.prevOcrResult
-        ocr_result = self.snipOcr()
+        self.prevShot = self.getWindow().copy(
+            min(self.start.x(), self.end.x()),
+            min(self.start.y(), self.end.y()),
+            abs(self.start.x() - self.end.x()),
+            abs(self.start.y() - self.end.y()),
+        )
+        palette = QPalette(self.myWin.ScreenShotDisplay.palette())
+        palette.setBrush(QPalette.Background, QBrush(
+            self.prevShot.scaled(self.myWin.ScreenShotDisplay.width(), self.myWin.ScreenShotDisplay.height(),
+                                 Qt.KeepAspectRatioByExpanding,
+                                 Qt.SmoothTransformation)))
+        self.myWin.ScreenShotDisplay.setPalette(palette)
+        self.myWin.ScreenShotDisplay.setAutoFillBackground(True)
 
-        if not ocr_result:
-            log_ocr_failure()
-            return
-
-        self.prevOcrResult = ocr_result
-        if prev_ocr_result == ocr_result:
-            return
+    def togglePause(self):
+        if self.is_paused:
+            self.timer.start(self.interval)
         else:
-            pyperclip.copy(ocr_result)
-            log_copied(ocr_result)
+            self.timer.stop()
+        self.is_paused = not self.is_paused
 
 
-arg_parser = argparse.ArgumentParser(description=__doc__)
-arg_parser.add_argument(
-    "langs",
-    nargs="?",
-    default="eng",
-    help='languages passed to tesseract, eg. "eng+fra" (default: %(default)s)',
-)
-arg_parser.add_argument(
-    "-i",
-    "--interval",
-    type=int,
-    default=None,
-    help="select a screen region then take textshots every INTERVAL milliseconds",
-)
+class PickTextMainWindow(QMainWindow, Ui_MainWindow):  # 继承 QMainWindow 类和 Ui_MainWindow 界面类
+    class PickTextMainWindow(QMainWindow, Ui_MainWindow):
+        """
+        Main window class for the PickText application.
+        """
 
+    def __init__(self, parent=None):
+        super(PickTextMainWindow, self).__init__(parent)  # 初始化父类
+        self.setupUi(self)  # 继承 Ui_MainWindow 界面类
+        self.snipper = None
+        self.toolButton_3.clicked.connect(self.clickButton)
 
-def take_textshot(langs, interval):
-    ensure_tesseract_installed()
+    def resizeEvent(self, event):
+        print('resize the frame')
+        # 如果窗口大小改变，重新绘制背景图
+        if self.snipper and self.snipper.prevShot:
+            palette = QPalette(self.ScreenShotDisplay.palette())
+            palette.setBrush(QPalette.Background, QBrush(
+                self.snipper.prevShot.scaled(self.ScreenShotDisplay.width(), self.ScreenShotDisplay.height(),
+                                             Qt.KeepAspectRatioByExpanding,
+                                             Qt.SmoothTransformation)))
+            self.ScreenShotDisplay.setPalette(palette)
+            self.ScreenShotDisplay.setAutoFillBackground(True)
 
-    QtCore.QCoreApplication.setAttribute(Qt.AA_DisableHighDpiScaling)
-    app = QtWidgets.QApplication(sys.argv)
-
-    window = QtWidgets.QMainWindow()
-    if interval != None:
-        snipper = IntervalSnipper(window, interval, langs)
-        snipper.show()
-    else:
-        snipper = OneTimeSnipper(window, langs)
-        snipper.show()
-
-    sys.exit(app.exec_())
-
-
-def main():
-    args = arg_parser.parse_args()
-    take_textshot(args.langs, args.interval)
-
-
-if __name__ == "__main__":
-    main()
+    def clickButton(self):
+        sender = self.sender()
+        print(sender.text() + '被点击')
+        self.snipper = IntervalSnipper(self, 500, None, Qt.WindowFlags())
+        self.snipper.show()
