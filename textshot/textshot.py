@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """ Take a screenshot and copy its text content to the clipboard. """
 
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPalette, QBrush
-from PyQt5.QtWidgets import QMainWindow
+from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPalette, QBrush
+from PySide6.QtWidgets import QMainWindow
 
 from display.display_main import Ui_MainWindow
 from .logger import log_ocr_failure
@@ -12,23 +12,27 @@ from .ocr import get_ocr_result
 
 
 class Snipper(QtWidgets.QWidget):
-    def __init__(self, parent, langs=None, flags=Qt.WindowFlags()):
-        super().__init__(parent=parent, flags=flags)
+    def __init__(self, parent, langs=None):
+        super().__init__(parent=parent)
 
         self.setWindowTitle("TextShot")
         self.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Dialog
+            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.ToolTip
+            | Qt.WindowType.Popup
         )
-        self.setWindowState(self.windowState() | Qt.WindowFullScreen)
+        # self.setWindowState(Qt.WindowState.WindowFullScreen)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self._screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+
+        self.setGeometry(self._screen.geometry())
 
         palette = QtGui.QPalette()
         palette.setBrush(self.backgroundRole(), QtGui.QBrush(self.getWindow()))
         self.setPalette(palette)
 
-        QtWidgets.QApplication.setOverrideCursor(QtGui.QCursor(QtCore.Qt.CrossCursor))
-
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.CrossCursor)
         self.start, self.end = QtCore.QPoint(), QtCore.QPoint()
         self.langs = langs
 
@@ -36,14 +40,14 @@ class Snipper(QtWidgets.QWidget):
         return self._screen.grabWindow(0)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape:
+        if event.key() == Qt.Key.Key_Escape:
             QtWidgets.QApplication.quit()
 
         return super().keyPressEvent(event)
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QtGui.QColor(0, 0, 0, 100))
         painter.drawRect(0, 0, self.width(), self.height())
 
@@ -73,6 +77,7 @@ class Snipper(QtWidgets.QWidget):
             log_ocr_failure()
 
     def hide(self):
+        print('now is hide')
         super().hide()
         # 重置鼠标样式
         QtWidgets.QApplication.restoreOverrideCursor()
@@ -108,8 +113,8 @@ class IntervalSnipper(Snipper):
 
     prevOcrResult = None
 
-    def __init__(self, parent, interval, langs=None, flags=Qt.WindowFlags()):
-        super().__init__(parent, langs, flags)
+    def __init__(self, parent, interval, langs=None):
+        super().__init__(parent, langs)
         self.interval = interval
         self.myWin: PickTextMainWindow = parent
 
@@ -136,10 +141,10 @@ class IntervalSnipper(Snipper):
             abs(self.start.y() - self.end.y()),
         )
         palette = QPalette(self.myWin.ScreenShotDisplay.palette())
-        palette.setBrush(QPalette.Background, QBrush(
+        palette.setBrush(QPalette.ColorRole.Window, QBrush(
             self.prevShot.scaled(self.myWin.ScreenShotDisplay.width(), self.myWin.ScreenShotDisplay.height(),
-                                 Qt.KeepAspectRatioByExpanding,
-                                 Qt.SmoothTransformation)))
+                                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                 Qt.TransformationMode.SmoothTransformation)))
         self.myWin.ScreenShotDisplay.setPalette(palette)
         self.myWin.ScreenShotDisplay.setAutoFillBackground(True)
 
@@ -168,15 +173,13 @@ class PickTextMainWindow(QMainWindow, Ui_MainWindow):  # 继承 QMainWindow 类�
         # 如果窗口大小改变，重新绘制背景图
         if self.snipper and self.snipper.prevShot:
             palette = QPalette(self.ScreenShotDisplay.palette())
-            palette.setBrush(QPalette.Background, QBrush(
+            palette.setBrush(QPalette.ColorRole.Window, QBrush(
                 self.snipper.prevShot.scaled(self.ScreenShotDisplay.width(), self.ScreenShotDisplay.height(),
-                                             Qt.KeepAspectRatioByExpanding,
-                                             Qt.SmoothTransformation)))
+                                             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                             Qt.TransformationMode.SmoothTransformation)))
             self.ScreenShotDisplay.setPalette(palette)
             self.ScreenShotDisplay.setAutoFillBackground(True)
 
     def clickButton(self):
-        sender = self.sender()
-        print(sender.text() + '被点击')
-        self.snipper = IntervalSnipper(self, 500, None, Qt.WindowFlags())
+        self.snipper = IntervalSnipper(self, 500, None)
         self.snipper.show()
