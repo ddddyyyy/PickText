@@ -39,10 +39,10 @@
        </size>
       </property>
       <property name="frameShape">
-       <enum>QFrame::Panel</enum>
+       <enum>QFrame::Shape::Panel</enum>
       </property>
       <property name="frameShadow">
-       <enum>QFrame::Raised</enum>
+       <enum>QFrame::Shadow::Raised</enum>
       </property>
       <layout class="QHBoxLayout" name="horizontalLayout">
        <item>
@@ -89,37 +89,15 @@
        </size>
       </property>
       <property name="frameShape">
-       <enum>QFrame::Panel</enum>
+       <enum>QFrame::Shape::Panel</enum>
       </property>
       <property name="frameShadow">
-       <enum>QFrame::Raised</enum>
+       <enum>QFrame::Shadow::Raised</enum>
       </property>
      </widget>
     </item>
     <item>
-     <widget class="QFrame" name="ScreenShotDisplay">
-      <property name="sizePolicy">
-       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-        <horstretch>100</horstretch>
-        <verstretch>100</verstretch>
-       </sizepolicy>
-      </property>
-      <property name="minimumSize">
-       <size>
-        <width>100</width>
-        <height>100</height>
-       </size>
-      </property>
-      <property name="autoFillBackground">
-       <bool>true</bool>
-      </property>
-      <property name="frameShape">
-       <enum>QFrame::Panel</enum>
-      </property>
-      <property name="frameShadow">
-       <enum>QFrame::Raised</enum>
-      </property>
-     </widget>
+     <widget class="QGraphicsView" name="ScreenShotDisplay"/>
     </item>
    </layout>
   </widget>
@@ -129,7 +107,7 @@
      <x>0</x>
      <y>0</y>
      <width>775</width>
-     <height>18</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>

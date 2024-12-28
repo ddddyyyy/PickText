@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """ Take a screenshot and copy its text content to the clipboard. """
-
-from PySide6 import QtCore, QtGui, QtWidgets
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPalette, QBrush
-from PySide6.QtWidgets import QMainWindow
+from PyQt5.QtGui import QCursor
+from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QMainWindow, QGraphicsPixmapItem, QGraphicsScene
 
 from display.display_main import Ui_MainWindow
-from .logger import log_ocr_failure
-from .ocr import get_ocr_result
 
 
 class Snipper(QtWidgets.QWidget):
@@ -21,6 +18,7 @@ class Snipper(QtWidgets.QWidget):
             | Qt.WindowType.ToolTip
             | Qt.WindowType.Popup
         )
+        # mac系统设置全屏，会导致直接切换到另外一个屏幕
         # self.setWindowState(Qt.WindowState.WindowFullScreen)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -29,14 +27,15 @@ class Snipper(QtWidgets.QWidget):
         self.setGeometry(self._screen.geometry())
 
         palette = QtGui.QPalette()
-        palette.setBrush(self.backgroundRole(), QtGui.QBrush(self.getWindow()))
+        palette.setBrush(self.backgroundRole(), QtGui.QBrush(self.get_window()))
         self.setPalette(palette)
 
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.CrossCursor)
         self.start, self.end = QtCore.QPoint(), QtCore.QPoint()
         self.langs = langs
+        self.prevShot = None
 
-    def getWindow(self):
+    def get_window(self):
         return self._screen.grabWindow(0)
 
     def keyPressEvent(self, event):
@@ -49,7 +48,7 @@ class Snipper(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QtGui.QColor(0, 0, 0, 100))
-        painter.drawRect(0, 0, self.width(), self.height())
+        painter.drawRect(self.rect())
 
         if self.start == self.end:
             return super().paintEvent(event)
@@ -60,21 +59,32 @@ class Snipper(QtWidgets.QWidget):
         return super().paintEvent(event)
 
     def mousePressEvent(self, event):
-        self.start = self.end = event.pos()
+        self.start = self.end = event.position().toPoint()
         self.update()
         return super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        self.end = event.pos()
+        self.end = event.position().toPoint()
         self.update()
         return super().mouseMoveEvent(event)
 
-    def snipOcr(self):
-        ocr_result = self.ocrOfDrawnRectangle()
-        if ocr_result:
-            return ocr_result
-        else:
-            log_ocr_failure()
+    def get_screen_shot_img(self):
+        # 获取设备像素比率  物理像素与逻辑像素之间的比率
+        device_pixel_ratio = self._screen.devicePixelRatio()
+        # 计算实际绘制尺寸
+        # 在显示和编程的时候，是按照逻辑像素取进行展示与设计
+        # 逻辑尺寸= 物理尺寸 / 像素比  计算出符合当前屏幕的尺寸
+        # 此处截图的时候，也要记得调整一下 从逻辑像素转换成为物理像素进行抓取
+        # 不然截图出来会有偏差
+        # 物理像素 = 逻辑像素 * 像素比率
+        real_start = QtCore.QPoint()
+        real_end = QtCore.QPoint()
+        real_start.setX(int(self.start.x() * device_pixel_ratio))
+        real_start.setY(int(self.start.y() * device_pixel_ratio))
+        real_end.setX(int(self.end.x() * device_pixel_ratio))
+        real_end.setY(int(self.end.y() * device_pixel_ratio))
+        rect = QtCore.QRect(real_start, real_end)
+        return self.get_window().copy(rect)
 
     def hide(self):
         print('now is hide')
@@ -82,28 +92,6 @@ class Snipper(QtWidgets.QWidget):
         # 重置鼠标样式
         QtWidgets.QApplication.restoreOverrideCursor()
         QtWidgets.QApplication.processEvents()
-
-    def ocrOfDrawnRectangle(self):
-        return get_ocr_result(
-            self.getWindow().copy(
-                min(self.start.x(), self.end.x()),
-                min(self.start.y(), self.end.y()),
-                abs(self.start.x() - self.end.x()),
-                abs(self.start.y() - self.end.y()),
-            ),
-            self.langs,
-        )
-
-
-class OneTimeSnipper(Snipper):
-    """Take an OCR screenshot once then end execution."""
-
-    def mouseReleaseEvent(self, event):
-        if self.start == self.end:
-            return super().mouseReleaseEvent(event)
-        # 隐藏截图组件
-        self.hide()
-
 
 class IntervalSnipper(Snipper):
     """
@@ -121,34 +109,25 @@ class IntervalSnipper(Snipper):
         # 配置定时组件
         self.timer = QTimer()
         self.is_paused = True
-        self.prevShot = None
-        self.timer.timeout.connect(self.onShotOcrInterval)
+        self.timer.timeout.connect(self.on_shot_ocr_interval)
 
     def mouseReleaseEvent(self, event):
         if self.start == self.end:
             return super().mouseReleaseEvent(event)
         # Take a shot as soon as the rectangle has been drawn
-        self.onShotOcrInterval()
-        # self.togglePause()
+        self.on_shot_ocr_interval()
         # 隐藏截图组件
         self.hide()
 
-    def onShotOcrInterval(self):
-        self.prevShot = self.getWindow().copy(
-            min(self.start.x(), self.end.x()),
-            min(self.start.y(), self.end.y()),
-            abs(self.start.x() - self.end.x()),
-            abs(self.start.y() - self.end.y()),
-        )
-        palette = QPalette(self.myWin.ScreenShotDisplay.palette())
-        palette.setBrush(QPalette.ColorRole.Window, QBrush(
-            self.prevShot.scaled(self.myWin.ScreenShotDisplay.width(), self.myWin.ScreenShotDisplay.height(),
-                                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                 Qt.TransformationMode.SmoothTransformation)))
-        self.myWin.ScreenShotDisplay.setPalette(palette)
-        self.myWin.ScreenShotDisplay.setAutoFillBackground(True)
+    def on_shot_ocr_interval(self):
+        self.prevShot = self.get_screen_shot_img()
+        # put the img into scene
+        item = QGraphicsPixmapItem(self.prevShot)
+        scene = QGraphicsScene()
+        scene.addItem(item)
+        self.myWin.ScreenShotDisplay.setScene(scene)
 
-    def togglePause(self):
+    def toggle_pause(self):
         if self.is_paused:
             self.timer.start(self.interval)
         else:
@@ -168,18 +147,9 @@ class PickTextMainWindow(QMainWindow, Ui_MainWindow):  # 继承 QMainWindow 类�
         self.snipper = None
         self.toolButton_3.clicked.connect(self.clickButton)
 
-    def resizeEvent(self, event):
-        print('resize the frame')
-        # 如果窗口大小改变，重新绘制背景图
-        if self.snipper and self.snipper.prevShot:
-            palette = QPalette(self.ScreenShotDisplay.palette())
-            palette.setBrush(QPalette.ColorRole.Window, QBrush(
-                self.snipper.prevShot.scaled(self.ScreenShotDisplay.width(), self.ScreenShotDisplay.height(),
-                                             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                             Qt.TransformationMode.SmoothTransformation)))
-            self.ScreenShotDisplay.setPalette(palette)
-            self.ScreenShotDisplay.setAutoFillBackground(True)
-
     def clickButton(self):
+        if self.snipper:
+            self.snipper.close()
+            self.snipper.deleteLater()
         self.snipper = IntervalSnipper(self, 500, None)
         self.snipper.show()

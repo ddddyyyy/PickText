@@ -1,5 +1,5 @@
 Pillow
-PySide6
+PyQt6
 py-notifier
 pyperclip
 pytesseract

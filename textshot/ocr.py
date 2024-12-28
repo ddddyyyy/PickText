@@ -4,7 +4,7 @@ import sys
 import io
 from .logger import log_ocr_error, print_error
 from .notifications import notify
-from PySide6 import QtCore
+from PyQt6 import QtCore
 from .messages import ocr_error_message
 
 
