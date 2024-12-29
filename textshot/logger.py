@@ -1,6 +1,9 @@
 from .messages import ocr_failure_message
 
 
+def log_info(var):
+    print(f'INFO: "{var}"')
+
 def log_copied(copied):
     print(f'INFO: Copied "{copied}" to the clipboard')
 

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """ Take a screenshot and copy its text content to the clipboard. """
-from PyQt5.QtGui import QCursor
+
+import qtawesome as qta
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QMainWindow, QGraphicsPixmapItem, QGraphicsScene
 
 from display.display_main import Ui_MainWindow
+from textshot import logger
 
 
 class Snipper(QtWidgets.QWidget):
@@ -93,6 +95,7 @@ class Snipper(QtWidgets.QWidget):
         QtWidgets.QApplication.restoreOverrideCursor()
         QtWidgets.QApplication.processEvents()
 
+
 class IntervalSnipper(Snipper):
     """
     Draw the screenshot rectangle once, then perform OCR there every `interval`
@@ -145,11 +148,29 @@ class PickTextMainWindow(QMainWindow, Ui_MainWindow):  # 继承 QMainWindow 类�
         super(PickTextMainWindow, self).__init__(parent)  # 初始化父类
         self.setupUi(self)  # 继承 Ui_MainWindow 界面类
         self.snipper = None
-        self.toolButton_3.clicked.connect(self.clickButton)
+        # 初始化各个组件的事件以及属性
+        self.start_interval_shot_btn.clicked.connect(self.start_shot)
+        self.toggle_btn.setIcon(qta.icon("fa5.play-circle"))
+        self.toggle_btn.clicked.connect(self.toggle_interval_shot)
+        self.shot_interval_spin.valueChanged.connect(self.update_interval)
 
-    def clickButton(self):
+    def start_shot(self):
         if self.snipper:
             self.snipper.close()
             self.snipper.deleteLater()
-        self.snipper = IntervalSnipper(self, 500, None)
+            self.toggle_btn.setIcon(qta.icon("fa5.play-circle"))
+        self.snipper = IntervalSnipper(self, self.shot_interval_spin.value(), None)
         self.snipper.show()
+
+    def toggle_interval_shot(self):
+        if self.snipper:
+            self.snipper.toggle_pause()
+            if self.snipper.is_paused:
+                self.toggle_btn.setIcon(qta.icon("fa5.play-circle"))
+            else:
+                self.toggle_btn.setIcon(qta.icon("fa5.pause-circle"))
+
+    def update_interval(self, value):
+        if self.snipper:
+            self.snipper.interval = value
+            logger.log_info(f"Interval changed to {value} ms")
